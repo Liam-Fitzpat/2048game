@@ -76,6 +76,62 @@
     return { board: working, moved, gained };
   }
 
+
+  /**
+   * The same move as move(), but also records where every tile went, so the
+   * interface can animate tiles sliding instead of redrawing the board.
+   *
+   * The board is read as 4 "lines" running toward the wall the tiles move to.
+   * For a "right" move, row 0 is read as [0,3], [0,2], [0,1], [0,0].
+   *
+   * Returns { board, moved, gained, movements, mergedCells } where each movement
+   * is { from: [r, c], to: [r, c], merged } and merged = true means the tile
+   * slid into another tile and combined with it.
+   */
+  function trackMove(board, direction) {
+    const size = board.length;
+    const next = createEmptyBoard(size);
+    const movements = [];
+    const mergedCells = [];
+    let gained = 0;
+
+    const lineCell = {
+      left: (line, k) => [line, k],
+      right: (line, k) => [line, size - 1 - k],
+      up: (line, k) => [k, line],
+      down: (line, k) => [size - 1 - k, line],
+    }[direction];
+
+    for (let line = 0; line < size; line++) {
+      let slot = 0;            // next free position along this line
+      let canMerge = false;    // can the last placed tile still merge?
+
+      for (let k = 0; k < size; k++) {
+        const [r, c] = lineCell(line, k);
+        const value = board[r][c];
+        if (!value) continue;
+
+        const [pr, pc] = slot > 0 ? lineCell(line, slot - 1) : [];
+        if (canMerge && next[pr][pc] === value) {
+          next[pr][pc] = value * 2;
+          gained += value * 2;
+          movements.push({ from: [r, c], to: [pr, pc], merged: true });
+          mergedCells.push([pr, pc]);
+          canMerge = false;    // a merged tile can't merge again this move
+        } else {
+          const [tr, tc] = lineCell(line, slot);
+          next[tr][tc] = value;
+          movements.push({ from: [r, c], to: [tr, tc], merged: false });
+          canMerge = true;
+          slot++;
+        }
+      }
+    }
+
+    const moved = next.some((row, r) => row.some((v, c) => v !== board[r][c]));
+    return { board: next, moved, gained, movements, mergedCells };
+  }
+
   function emptyCells(board) {
     const cells = [];
     board.forEach((row, r) => row.forEach((v, c) => { if (v === 0) cells.push([r, c]); }));
@@ -113,7 +169,7 @@
 
   const api = {
     SIZE, WIN_VALUE, createEmptyBoard, cloneBoard, slideRowLeft,
-    move, emptyCells, addRandomTile, canMove, hasWon, newGame,
+    move, trackMove, emptyCells, addRandomTile, canMove, hasWon, newGame,
   };
 
   // Works in the browser (global) and in Node (require) without a build step.

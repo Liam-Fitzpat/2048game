@@ -68,3 +68,33 @@ test("new game starts with exactly two tiles", () => {
   const board = G.newGame();
   assert.strictEqual(board.flat().filter((v) => v !== 0).length, 2);
 });
+
+test("trackMove gives the same result as move on many random boards", () => {
+  // Simple seeded random generator so the test is repeatable
+  let seed = 42;
+  const rand = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const values = [0, 0, 2, 2, 4, 8];
+
+  for (let i = 0; i < 500; i++) {
+    const board = Array.from({ length: 4 }, () =>
+      Array.from({ length: 4 }, () => values[Math.floor(rand() * values.length)]));
+    for (const dir of ["left", "right", "up", "down"]) {
+      const expected = G.move(board, dir);
+      const tracked = G.trackMove(board, dir);
+      assert.deepStrictEqual(tracked.board, expected.board);
+      assert.strictEqual(tracked.gained, expected.gained);
+      assert.strictEqual(tracked.moved, expected.moved);
+    }
+  }
+});
+
+test("trackMove records where each tile slides and which ones merge", () => {
+  const board = [[2, 2, 0, 4], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]];
+  const { movements, mergedCells } = G.trackMove(board, "left");
+  assert.deepStrictEqual(movements, [
+    { from: [0, 0], to: [0, 0], merged: false },
+    { from: [0, 1], to: [0, 0], merged: true },
+    { from: [0, 3], to: [0, 1], merged: false },
+  ]);
+  assert.deepStrictEqual(mergedCells, [[0, 0]]);
+});

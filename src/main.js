@@ -32,21 +32,42 @@
     render();
   }
 
-  function render(newTile = null) {
-    boardEl.innerHTML = "";
+  // How long the slide takes, in ms. Must match --slide-time in style.css.
+  const SLIDE_MS = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 110;
+  let animating = false;
+
+  // The board has two layers: 16 fixed background cells, and a layer of
+  // tiles on top that can move freely between cell positions.
+  boardEl.innerHTML = "";
+  for (let i = 0; i < G.SIZE * G.SIZE; i++) {
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    boardEl.appendChild(cell);
+  }
+  const tileLayer = document.createElement("div");
+  tileLayer.className = "tile-layer";
+  boardEl.appendChild(tileLayer);
+
+  function placeTile(el, r, c) {
+    el.style.setProperty("--r", r);
+    el.style.setProperty("--c", c);
+  }
+
+  // Redraw every tile from the board. Used after each slide finishes,
+  // on undo, and at the start of a new game.
+  function render(newTile = null, mergedCells = []) {
+    tileLayer.innerHTML = "";
     state.board.forEach((row, r) => {
       row.forEach((value, c) => {
-        const cell = document.createElement("div");
-        cell.className = "cell";
-        if (value) {
-          const tile = document.createElement("div");
-          tile.className = `tile tile-${value > 2048 ? "super" : value}`;
-          if (newTile && newTile[0] === r && newTile[1] === c) tile.classList.add("tile-new");
-          tile.textContent = value;
-          cell.appendChild(tile);
-        }
-        cell.setAttribute("aria-label", value ? String(value) : "empty");
-        boardEl.appendChild(cell);
+        if (!value) return;
+        const tile = document.createElement("div");
+        tile.className = `tile tile-${value > 2048 ? "super" : value}`;
+        tile.dataset.pos = `${r},${c}`;
+        tile.textContent = value;
+        placeTile(tile, r, c);
+        if (newTile && newTile[0] === r && newTile[1] === c) tile.classList.add("tile-new");
+        if (mergedCells.some(([mr, mc]) => mr === r && mc === c)) tile.classList.add("tile-merged");
+        tileLayer.appendChild(tile);
       });
     });
     scoreEl.textContent = state.score;
@@ -55,25 +76,36 @@
   }
 
   function handleMove(direction) {
-    if (!messageEl.hidden) return;
-    const result = G.move(state.board, direction);
+    if (!messageEl.hidden || animating) return;
+    const result = G.trackMove(state.board, direction);
     if (!result.moved) return;
 
     state.history.push({ board: state.board, score: state.score });
     if (state.history.length > 20) state.history.shift();
 
-    const placed = G.addRandomTile(result.board);
-    state.board = placed.board;
-    state.score += result.gained;
-    if (state.score > state.best) { state.best = state.score; saveBest(state.best); }
-    render(placed.position);
+    // Step 1: slide each tile on screen to its new cell. CSS animates the change.
+    result.movements.forEach(({ from, to }) => {
+      const el = tileLayer.querySelector(`[data-pos="${from[0]},${from[1]}"]`);
+      if (el) placeTile(el, to[0], to[1]);
+    });
 
-    if (!state.won && !state.keepPlaying && G.hasWon(state.board)) {
-      state.won = true;
-      showMessage("You made 2048!", true);
-    } else if (!G.canMove(state.board)) {
-      showMessage("No moves left", false);
-    }
+    // Step 2: once the slide ends, apply merges, add a new tile, and redraw.
+    animating = true;
+    setTimeout(() => {
+      animating = false;
+      const placed = G.addRandomTile(result.board);
+      state.board = placed.board;
+      state.score += result.gained;
+      if (state.score > state.best) { state.best = state.score; saveBest(state.best); }
+      render(placed.position, result.mergedCells);
+
+      if (!state.won && !state.keepPlaying && G.hasWon(state.board)) {
+        state.won = true;
+        showMessage("You made 2048!", true);
+      } else if (!G.canMove(state.board)) {
+        showMessage("No moves left", false);
+      }
+    }, SLIDE_MS);
   }
 
   function undo() {
