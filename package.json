@@ -1,0 +1,9 @@
+{
+  "name": "2048-game",
+  "version": "1.0.0",
+  "description": "The 2048 sliding-tile puzzle in vanilla JavaScript, with unit-tested game logic.",
+  "scripts": {
+    "test": "node --test tests/game.test.js"
+  },
+  "license": "MIT"
+}
